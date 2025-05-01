@@ -1,14 +1,28 @@
 import streamlit as st
-import joblib
 import re
-
 import requests
+import torch
+from transformers import BertTokenizer, BertForSequenceClassification
+from torch.nn.functional import softmax
 
-# Function to verify using NewsAPI
+# ---------------------
+# Load BERT model and tokenizer
+# ---------------------
+@st.cache_resource
+def load_model():
+    tokenizer = BertTokenizer.from_pretrained('mrm8488/bert-tiny-finetuned-fake-news')
+    model = BertForSequenceClassification.from_pretrained('mrm8488/bert-tiny-finetuned-fake-news', num_labels=2)
+    model.eval()
+    return tokenizer, model
+
+tokenizer, model = load_model()
+
+# ---------------------
+# NewsAPI search function
+# ---------------------
 def search_news(query):
-    api_key = 'b4f89375b21c4664adfc739250d7c042'  # Replace this with your actual API key
+    api_key = 'b4f89375b21c4664adfc739250d7c042'  # Replace with your actual key
     url = f'https://newsapi.org/v2/everything?q="{query}"&language=en&sortBy=relevancy&apiKey={api_key}'
-    
     try:
         response = requests.get(url)
         data = response.json()
@@ -19,45 +33,49 @@ def search_news(query):
     except Exception as e:
         st.warning(f"News API error: {e}")
         return []
-    
-# Load the model and the TF-IDF vectorizer
-model = joblib.load('news_detection_model.pkl')
-vectorizer = joblib.load('tfidf_vectorizer.pkl')
 
-# Preprocessing function (same as in the notebook)
-def preprocess_text(text):
-    text = str(text).lower()
-    text = re.sub('[^a-zA-Z\s]', '', text)  # Remove punctuation/numbers
-    return text
+# ---------------------
+# Predict using BERT
+# ---------------------
+def predict_bert(text):
+    inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True, max_length=512)
+    with torch.no_grad():
+        outputs = model(**inputs)
+        probs = softmax(outputs.logits, dim=1)
+        confidence = probs[0].tolist()
+        label = 'real' if torch.argmax(outputs.logits) == 1 else 'fake'
+    return label, confidence
 
+# ---------------------
 # Streamlit UI
-st.title("Fake News Detection")
-st.write("This app classifies news articles as either **fake** or **real**.")
+# ---------------------
+st.title("🕵️ Fake News Detection with BERT + Real-Time Verification")
+st.write("This app uses a BERT model and trusted news sources to classify news as **fake** or **real**.")
 
-# Get the user input (news article)
-user_input = st.text_area("Enter News Article Here")
+user_input = st.text_area("📰 Enter News Article Here")
 
 if st.button('Classify'):
-    # Preprocess input
-    processed_input = preprocess_text(user_input)
-
-    # Transform input using vectorizer
-    input_tfidf = vectorizer.transform([processed_input])
-
-    # Make ML prediction
-    prediction = model.predict(input_tfidf)
-
-    # Cross-check using NewsAPI
-    search_results = search_news(user_input)
-
-    # Decision logic
-    if search_results:
-        st.success("✅ Real-time news sources found. Article likely **REAL**.")
-        for article in search_results[:3]:
-            st.write(f"- [{article['title']}]({article['url']}) ({article['source']['name']})")
+    if not user_input.strip():
+        st.warning("Please enter a news article.")
     else:
-        # Use ML prediction only if no reliable sources found
-        if prediction[0] == 'fake':
-            st.error("⚠️ The article **might be FAKE**, and no similar trusted news was found.")
+        with st.spinner("Analyzing with BERT..."):
+            label, confidence = predict_bert(user_input)
+            search_results = search_news(user_input)
+
+        # NewsAPI Verification First
+        st.markdown("---")
+        st.subheader("🔍 Real-Time NewsAPI Verification")
+
+        if search_results:
+            st.success("✅ Similar articles found on trusted sources. Likely **REAL**.")
+            for article in search_results[:3]:
+                st.markdown(f"- [{article['title']}]({article['url']}) ({article['source']['name']})")
         else:
+            # If not found in trusted sources, fallback to BERT result
+            st.subheader("🤖 BERT Model Prediction")
+            if label == 'fake':
+                st.error(f"⚠️ **FAKE NEWS** detected by BERT (Confidence: {round(confidence[0]*100, 2)}%)")
+            else:
+                st.success(f"✅ **REAL NEWS** detected by BERT (Confidence: {round(confidence[1]*100, 2)}%)")
+
             st.info("🤔 ML model thinks it's REAL, but couldn't verify online.")
