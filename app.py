@@ -40,29 +40,24 @@ user_input = st.text_area("Enter News Article Here")
 if st.button('Classify'):
     # Preprocess input
     processed_input = preprocess_text(user_input)
-    
+
     # Transform input using vectorizer
     input_tfidf = vectorizer.transform([processed_input])
-    
+
     # Make ML prediction
     prediction = model.predict(input_tfidf)
-    
-    # Check via NewsAPI
+
+    # Cross-check using NewsAPI
     search_results = search_news(user_input)
 
-    # Show model prediction
-    if prediction[0] == 'fake':
-        st.error("The news article is **FAKE** according to the ML model.")
-    else:
-        st.success("The news article is **REAL** according to the ML model.")
-
-    # Show NewsAPI results
-    st.markdown("---")
-    st.subheader("🔎 Real-Time News Verification")
-
+    # Decision logic
     if search_results:
-        st.success("✅ Similar news found on trusted sources:")
+        st.success("✅ Real-time news sources found. Article likely **REAL**.")
         for article in search_results[:3]:
             st.write(f"- [{article['title']}]({article['url']}) ({article['source']['name']})")
     else:
-        st.warning("❌ No similar news found in real-time trusted sources.")
+        # Use ML prediction only if no reliable sources found
+        if prediction[0] == 'fake':
+            st.error("⚠️ The article **might be FAKE**, and no similar trusted news was found.")
+        else:
+            st.info("🤔 ML model thinks it's REAL, but couldn't verify online.")
