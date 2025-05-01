@@ -6,7 +6,7 @@ import requests
 
 # Function to verify using NewsAPI
 def search_news(query):
-    api_key = 'YOUR_NEWSAPI_KEY'  # Replace this with your actual API key
+    api_key = 'b4f89375b21c4664adfc739250d7c042'  # Replace this with your actual API key
     url = f'https://newsapi.org/v2/everything?q="{query}"&language=en&sortBy=relevancy&apiKey={api_key}'
     
     try:
